@@ -1,0 +1,139 @@
+diff --git a/src/main/java/com/hungteen/pvzmod/event/OverworldEvents.java b/src/main/java/com/hungteen/pvzmod/event/OverworldEvents.java
+index 2036df6c..18cdc128 100644
+--- a/src/main/java/com/hungteen/pvzmod/event/OverworldEvents.java
++++ b/src/main/java/com/hungteen/pvzmod/event/OverworldEvents.java
+@@ -50,15 +50,27 @@ public class OverworldEvents{
+ 		}
+ 		int time = (int)(totalTime % 24000L);//当天的时间
+ 		switch(time) {
++                case 0:{
++                        OverworldData data=OverworldData.getGlobalData(ev.world);
++                        int cooldown = data.getCooldown();
++                        if(cooldown>0)
++                        {
++                            cooldown--;
++                            data.setCooldown(cooldown);
++                        }
++                }
+ 		case 399:{
+ 			OverworldData data=OverworldData.getGlobalData(ev.world);
+ 			data.setChanged(false);
+ 			break;
+ 		}
+ 		case 400:{//400tick：开始生成特殊事件
++
+ 			OverworldData data=OverworldData.getGlobalData(ev.world);
+ //			System.out.println("10 tick now");
+ 			if(!data.hasChanged()) {//还没改变，防止世界时间停止，而不停刷新
++                                if(data.getCooldown()>0)return;
++                                data.setCooldown(ConfigurationUtil.MainConfig.globalSettings.zombieEventCooldown);
+ 				data.setChanged(true);
+ //				System.out.println("changed");
+ 				rand.setSeed(ev.world.getSeed() + totalTime);
+diff --git a/src/main/java/com/hungteen/pvzmod/event/TreeEvents.java b/src/main/java/com/hungteen/pvzmod/event/TreeEvents.java
+index a7a629d1..0654361b 100644
+--- a/src/main/java/com/hungteen/pvzmod/event/TreeEvents.java
++++ b/src/main/java/com/hungteen/pvzmod/event/TreeEvents.java
+@@ -3,6 +3,7 @@ package com.hungteen.pvzmod.event;
+ import java.util.Random;
+ 
+ import com.hungteen.pvzmod.registry.BlockRegister;
++import com.hungteen.pvzmod.util.ConfigurationUtil;
+ 
+ import net.minecraft.util.math.BlockPos;
+ import net.minecraft.world.World;
+@@ -17,7 +18,8 @@ public class TreeEvents {
+ 		//System.out.println("grow!");
+ 		World world=ev.getWorld();
+ 		if(!world.isRemote) {
+-		    int chance=16;
++		    int chance=ConfigurationUtil.MainConfig.globalSettings.treeGrowsOriginOreChance;
++                    if(chance<=0)return;
+ 		    Random rand=new Random();
+ 		    if(rand.nextInt(chance)==0) {
+ 			    BlockPos pos=ev.getPos();
+diff --git a/src/main/java/com/hungteen/pvzmod/util/ConfigurationUtil.java b/src/main/java/com/hungteen/pvzmod/util/ConfigurationUtil.java
+index 557c103b..481d4373 100644
+--- a/src/main/java/com/hungteen/pvzmod/util/ConfigurationUtil.java
++++ b/src/main/java/com/hungteen/pvzmod/util/ConfigurationUtil.java
+@@ -30,6 +30,15 @@ public class ConfigurationUtil {
+ 			@Config.Comment("different with default difficulty")
+ 			@Config.LangKey("gui.pvzconfig.difficulty")
+ 			public Difficulty pvzDifficulty = Difficulty.NORMAL;//植物能否伤害植物
++                        @Config.Comment("Chance(1 in X) that the tree will create Origin Ore after it grows up(0=disable)")
++                        @Config.LangKey("gui.pvzconfig.treeGrowsOriginOreChance")
++                        public int treeGrowsOriginOreChance = 100;
++                        @Config.Comment("Delay between zombie events and huge waves of zombies in days (-1=disable)")
++                        @Config.LangKey("gui.pvzconfig.zombieEventCooldown")
++                        public int zombieEventCooldown = 4;
++                        @Config.Comment("Disable Crazy Dave\'s house generation because it feels stupid when you see it every 500 blocks")
++                        @Config.LangKey("gui.pvzconfig.disableCrazyDavesHouse")
++                        public boolean disableCrazyDavesHouse = true;
+ 		}
+ 		
+ 		public static class SubCategoryDamageSettings{
+diff --git a/src/main/java/com/hungteen/pvzmod/world/data/OverworldData.java b/src/main/java/com/hungteen/pvzmod/world/data/OverworldData.java
+index 532ba0d0..189af756 100644
+--- a/src/main/java/com/hungteen/pvzmod/world/data/OverworldData.java
++++ b/src/main/java/com/hungteen/pvzmod/world/data/OverworldData.java
+@@ -18,6 +18,7 @@ public class OverworldData extends WorldSavedData{
+ 	private boolean attack_now=false;
+ 	private boolean changed=false;
+ 	private boolean is_zomboss_defeated=false;
++        private int eventCooldown = 0;
+ 	
+ 	public OverworldData(String name) {
+ 		super(name);
+@@ -72,6 +73,15 @@ public class OverworldData extends WorldSavedData{
+ 	{
+ 		return is_zomboss_defeated;
+ 	}
++        public int getCooldown()
++        {
++            return eventCooldown;
++        }
++        public void setCooldown(int cooldown)
++        {
++            eventCooldown = cooldown;
++            this.markDirty();
++        }
+ 
+ 	@Override
+ 	public void readFromNBT(NBTTagCompound nbt) {
+@@ -88,6 +98,7 @@ public class OverworldData extends WorldSavedData{
+ 		attack_now=nbt.getBoolean("attack_now");
+ 		changed=nbt.getBoolean("has_changed");
+ 		is_zomboss_defeated=nbt.getBoolean("is_zomboss_defeated");
++                eventCooldown = nbt.getInteger("event_cooldown");
+ 	}
+ 
+ 	@Override
+@@ -103,6 +114,7 @@ public class OverworldData extends WorldSavedData{
+ 		nbt.setBoolean("attack_now", attack_now);
+ 		nbt.setBoolean("has_changed", changed);
+ 		nbt.setBoolean("is_zomboss_defeated", is_zomboss_defeated);
++                nbt.setInteger("event_cooldown",eventCooldown);
+ 		return nbt;
+ 	}
+ 	
+diff --git a/src/main/java/com/hungteen/pvzmod/world/gen/WorldGenStructures.java b/src/main/java/com/hungteen/pvzmod/world/gen/WorldGenStructures.java
+index 0cc2fd3c..4ab5cae9 100644
+--- a/src/main/java/com/hungteen/pvzmod/world/gen/WorldGenStructures.java
++++ b/src/main/java/com/hungteen/pvzmod/world/gen/WorldGenStructures.java
+@@ -18,6 +18,7 @@ import net.minecraft.world.chunk.IChunkProvider;
+ import net.minecraft.world.gen.IChunkGenerator;
+ import net.minecraft.world.gen.feature.WorldGenerator;
+ import net.minecraftforge.fml.common.IWorldGenerator;
++import com.hungteen.pvzmod.util.ConfigurationUtil;
+ 
+ public class WorldGenStructures implements IWorldGenerator{
+ 
+@@ -33,7 +34,7 @@ public class WorldGenStructures implements IWorldGenerator{
+ 		case -1:
+ 			break;
+ 		case 0:
+-			generateStructure(DAVEVILLA, world, random, chunkX, chunkZ, 300, Blocks.GRASS,BiomeUtil.plain);
++                        if(!ConfigurationUtil.MainConfig.globalSettings.disableCrazyDavesHouse)generateStructure(DAVEVILLA, world, random, chunkX, chunkZ, 300, Blocks.GRASS,BiomeUtil.plain);
+ 			break;
+ 		case 1:
+ 			break;
